@@ -2,10 +2,17 @@ const WebSocket = require('ws');
 
 const fs = require('fs');
 
+// Open the websockets
+
 const wsOrderBook = new WebSocket('wss://ftx.com/ws/');
+
+const wsTrades = new WebSocket('wss://ftx.com/ws/');
 
 const orderBookRequest =
   '{"op": "subscribe", "channel": "orderbook", "market": "BTC-PERP"}';
+
+const tradesRequest =
+  '{"op": "subscribe", "channel": "trades", "market": "BTC-PERP"}';
 
 let partialBids = [];
 let partialAsks = [];
@@ -32,6 +39,11 @@ wsOrderBook.on('open', function open() {
   wsOrderBook.send(orderBookRequest);
 });
 
+// send the subscription request to open the trades channel
+wsTrades.on('open', function open() {
+  wsTrades.send(tradesRequest);
+});
+
 // deal with the incoming data
 
 wsOrderBook.on('message', function incoming(data) {
@@ -49,7 +61,27 @@ wsOrderBook.on('message', function incoming(data) {
   }
 });
 
-// function to update the orderbook... trying it real time
+wsTrades.on('message', function incoming(data) {
+  row = JSON.parse(data);
+
+  if (row.type == 'update') {
+    let rowToWrite = JSON.stringify({
+      time: row.data[0].time,
+      liqudiation: row.data[0].liqudiation,
+      size: row.data[0].size,
+      side: row.data[0].side,
+      price: row.data[0].price
+    });
+
+    console.log(rowToWrite);
+
+    fs.appendFileSync('../trade_data_2.txt', rowToWrite + ',');
+  }
+});
+
+// Functions for sorting the data before writing it
+
+// Function to update the orderbook objects (partial)
 
 const updateOrderbook = row => {
   let bids = row.data.bids;
@@ -92,7 +124,7 @@ const updateOrderbook = row => {
   let bestBid = Math.max(...bidKeysAsNums);
   let bestAsk = Math.min(...askKeysAsNums);
 
-  console.log(`best bid/ask: ${bestBid} / ${bestAsk}`);
+  //console.log(`best bid/ask: ${bestBid} / ${bestAsk}`);
 
   // now convert it into the data i want to write
 
