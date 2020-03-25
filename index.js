@@ -15,7 +15,7 @@ let partialAsks = [];
 const setPartial = row => {
   //populate them as an array first
   partialBids = row.data.bids;
-  partialAsks = row.data.bids;
+  partialAsks = row.data.asks;
 
   // initialize the objects
   pBids = {};
@@ -58,29 +58,51 @@ const updateOrderbook = row => {
   uBids = {};
   uAsks = {};
 
-  bids.forEach(bid => (uBids[bid[0]] = bid[1]));
-  asks.forEach(ask => (uAsks[ask[0]] = ask[1]));
+  // take the date from the list and make it into kv object instead
+  // also don't add keys that are less than 0
+
+  // I am here - about to make it so kv only entered if v > 0
+  // (will have to use Number())
+
+  bids.forEach(bid => {
+    if (Number(bid[1]) > 0) {
+      uBids[Number(bid[0])] = bid[1];
+    }
+  });
+
+  asks.forEach(ask => {
+    if (Number(ask[1]) > 0) {
+      uAsks[Number(ask[0])] = ask[1];
+    }
+  });
 
   let currentBids = { ...pBids, ...uBids };
-  let currentAsks = { ...pBids, ...uBids };
+  let currentAsks = { ...pAsks, ...uAsks };
+
+  // get the best bid and best ask
+
+  let bidKeysAsNums = Object.keys(currentBids).map(bidKey =>
+    parseFloat(bidKey)
+  );
+
+  let askKeysAsNums = Object.keys(currentAsks).map(askKey =>
+    parseFloat(askKey)
+  );
+
+  let bestBid = Math.max(...bidKeysAsNums);
+  let bestAsk = Math.min(...askKeysAsNums);
+
+  console.log(`best bid/ask: ${bestBid} / ${bestAsk}`);
 
   // now convert it into the data i want to write
 
-  let rowToWrite = [row.data.time, currentBids, currentAsks];
-
-  let rowToWrite2 = {
-    time: JSON.stringify(row.data.time),
-    bids: JSON.stringify(currentBids),
-    asks: JSON.stringify(currentAsks)
-  };
-
-  let rowToWrite3 = JSON.stringify({
+  let rowToWrite = JSON.stringify({
     time: row.data.time,
     bids: currentBids,
-    asks: currentAsks
+    asks: currentAsks,
+    bestBid: bestBid,
+    bestAsk: bestAsk
   });
 
-  //now write it
-
-  fs.appendFileSync('message.txt', rowToWrite3 + ',');
+  fs.appendFileSync('../ob_data_2.txt', rowToWrite + ',');
 };
