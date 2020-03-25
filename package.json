@@ -1,0 +1,16 @@
+{
+  "name": "orderbook_connector",
+  "version": "1.0.0",
+  "description": "express server as client to receive and process orderbook data sent over websocket from exchange",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Matthew Macklin",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "socket.io": "^2.3.0",
+    "ws": "^7.2.3"
+  }
+}
