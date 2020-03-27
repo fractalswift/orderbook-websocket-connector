@@ -1,6 +1,11 @@
 const WebSocket = require('ws');
-
 const fs = require('fs');
+
+const obPath = '../ob_data_15.txt';
+const tradesPath = '../trade_data_15.txt';
+const obLogPath = '../ob_log.txt';
+const tradesLogPath = '../trades_log.txt';
+const simplePath = '../simple_data_15.txt';
 
 // Open the websockets
 
@@ -16,6 +21,16 @@ const tradesRequest =
 
 let partialBids = [];
 let partialAsks = [];
+
+// counters for logging
+let trades = 0;
+let obUpdates = 0;
+
+// for debugging
+let tradeMsgsRecieved = 0;
+let obUpdRecieved = 0;
+let tradeMisc = 0;
+let obMisc = 0;
 
 // function to set partialBids and partialAsks value:
 
@@ -46,22 +61,10 @@ wsTrades.on('open', function open() {
 
 // deal with the incoming data
 
-wsOrderBook.on('message', function incoming(data) {
-  // if it is a partial row then set the pB and pA variables:
-
-  row = JSON.parse(data);
-  if (row.type == 'partial') {
-    setPartial(row);
-    console.log('partial order book has been set!');
-  }
-
-  // if it is an udpate row, update the orderbok objects
-  else if (row.type == 'update') {
-    updateOrderbook(row);
-  }
-});
-
 wsTrades.on('message', function incoming(data) {
+  // count the message as received
+  tradeMsgsRecieved++;
+
   row = JSON.parse(data);
 
   if (row.type == 'update') {
@@ -73,15 +76,61 @@ wsTrades.on('message', function incoming(data) {
       price: row.data[0].price
     });
 
-    console.log(rowToWrite);
+    fs.appendFileSync(tradesPath, rowToWrite + ',');
 
-    fs.appendFileSync('../trade_data_2.txt', rowToWrite + ',');
+    // increment trades count for logging
+    trades++;
+  } else if (row.type !== 'update') {
+    // if might be an error - store it in the log file
+    let rowToWrite = JSON.stringify({ date: Date(), row: row });
+
+    fs.appendFileSync(tradesLogPath, rowToWrite + ',\n');
+
+    // Log it to the console
+    console.log('Trade message below:');
+    Object.entries(row).forEach(msg => {
+      console.log(`${msg[0]} : ${msg[1]}`);
+    });
+    tradeMisc++;
   }
 });
 
-// Functions for sorting the data before writing it
+wsOrderBook.on('message', function incoming(data) {
+  // Log message as received
+  obUpdRecieved++;
+  // if it is a partial row then set the pB and pA variables:
 
-// Function to update the orderbook objects (partial)
+  row = JSON.parse(data);
+
+  if (row.type == 'partial') {
+    setPartial(row);
+    console.log('partial order book has been set!');
+    obMisc++;
+  }
+
+  // if it is an udpate row, update the orderbook object and write the row
+  else if (row.type == 'update') {
+    updateOrderbook(row);
+
+    // if it is not an update row, log the message in case its an error
+  } else if (row.type !== 'update') {
+    obMisc++;
+
+    // it might be an error - store it in the log file
+    let rowToWrite = JSON.stringify({ date: Date(), row: row });
+
+    fs.appendFileSync(obLogPath, rowToWrite + ',\n');
+
+    // Log it to the console
+    console.log('OB message below:');
+
+    Object.entries(row).forEach(msg => {
+      console.log(`${msg[0]} : ${msg[1]}`);
+    });
+  }
+});
+
+// Function to update the orderbook objects (partial) with new data (update)
 
 const updateOrderbook = row => {
   let bids = row.data.bids;
@@ -124,7 +173,35 @@ const updateOrderbook = row => {
   let bestBid = Math.max(...bidKeysAsNums);
   let bestAsk = Math.min(...askKeysAsNums);
 
-  //console.log(`best bid/ask: ${bestBid} / ${bestAsk}`);
+  // Get the features that require the datas an array
+
+  // convert the bids obj to an array so we can iterate it with reduce
+
+  const bidsAsArray = Object.entries(currentBids);
+  const asksAsArray = Object.entries(currentAsks);
+
+  // reduce function to get total value of all btc bids
+
+  const getTotalValue = (total, arr) => total + arr[0] * arr[1];
+
+  // reduce function to get amount of btc for sale
+
+  const getTotalBtc = (total, arr) => total + arr[1];
+
+  // apply to the reduce functions
+
+  let bidsTotalValue = bidsAsArray.reduce(getTotalValue, 0);
+
+  let bidsTotalBtc = bidsAsArray.reduce(getTotalBtc, 0);
+
+  let asksTotalValue = asksAsArray.reduce(getTotalValue, 0);
+
+  let asksTotalBtc = asksAsArray.reduce(getTotalBtc, 0);
+
+  // get the average price of each btc if they are all filled
+
+  let avgIfBidsFilled = bidsTotalValue / bidsTotalBtc;
+  let avgIfAsksFilled = asksTotalValue / asksTotalBtc;
 
   // now convert it into the data i want to write
 
@@ -133,8 +210,50 @@ const updateOrderbook = row => {
     bids: currentBids,
     asks: currentAsks,
     bestBid: bestBid,
-    bestAsk: bestAsk
+    bestAsk: bestAsk,
+    bidsTotalBtc: bidsTotalBtc,
+    bidsTotalValue: bidsTotalValue,
+    avgIfBidsFilled: avgIfBidsFilled,
+    asksTotalBtc: asksTotalBtc,
+    asksTotalValue: asksTotalValue,
+    avgIfAsksFilled: avgIfAsksFilled,
+    checksum: row.data.checksum
   });
 
-  fs.appendFileSync('../ob_data_2.txt', rowToWrite + ',');
+  // a simpler row without the whole OB
+
+  let quickRow = JSON.stringify({
+    time: row.data.time,
+    bestBid: bestBid,
+    bestAsk: bestAsk,
+    bidsTotalBtc: bidsTotalBtc,
+    bidsTotalValue: bidsTotalValue,
+    avgIfBidsFilled: avgIfBidsFilled,
+    asksTotalBtc: asksTotalBtc,
+    asksTotalValue: asksTotalValue,
+    avgIfAsksFilled: avgIfAsksFilled
+  });
+
+  fs.appendFileSync(obPath, rowToWrite + ',');
+  fs.appendFileSync(simplePath, quickRow + ',');
+
+  // increment obUpdate for logging:
+  obUpdates++;
 };
+
+const pingAndCount = () => {
+  wsTrades.send(' {"op": "ping"}');
+  wsOrderBook.send(' {"op": "ping"}');
+
+  console.log(Date());
+  console.log(`Trade msgs recieved: ${tradeMsgsRecieved}`);
+  console.log(`Trades parsed: ${trades}`);
+  console.log(`Trade info msgs: ${tradeMisc}`);
+  console.log(`Orderbook Msgs Received: ${obUpdRecieved}`);
+  console.log(`Orderbook Updates parsed: ${obUpdates}`);
+  console.log(`Orderbook info msgs: ${obMisc}`);
+};
+
+setInterval(pingAndCount, 15000);
+
+// TODO add checksum test
